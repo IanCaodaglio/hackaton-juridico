@@ -1,15 +1,11 @@
-// Tipos do output dos blocos 3 e 4 (gerados via LLM).
-// IMPORTANTE: nomes propositalmente evitam "recommendation"/"advice" para
-// blindagem contra exercício ilegal da advocacia. Usar "topics_to_discuss",
-// "considerations", "items_for_professional_review".
-
+// Nomes evitam "recommendation"/"advice" — blindagem contra exercício ilegal da advocacia.
 export type UrgencyLevel = 'low' | 'medium' | 'high';
 
 export type TaxWindowAlert = {
   hasActiveWindow: boolean;
-  alertTitle: string;
-  alertBody: string;          // gerado por LLM
-  urgencyLevel: UrgencyLevel;
+  alertTitle:      string;
+  alertBody:       string;
+  urgencyLevel:    UrgencyLevel;
 };
 
 export type NextStepCategory =
@@ -19,14 +15,15 @@ export type NextStepCategory =
   | 'documentation';
 
 export type NextStep = {
-  title: string;
-  description: string;        // gerado por LLM
-  category: NextStepCategory;
+  title:           string;
+  description:     string;
+  category:        NextStepCategory;
+  estimatedImpact: string;
 };
 
 export type InsightsResult = {
-  taxWindow: TaxWindowAlert;
-  topicsToDiscuss: NextStep[]; // NÃO "recommendations"
-  generatedAt: string;         // ISO 8601
-  llmDisclaimer: string;
+  taxWindow:       TaxWindowAlert;
+  topicsToDiscuss: NextStep[];
+  generatedAt:     string;
+  llmDisclaimer:   string;
 };

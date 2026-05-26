@@ -1,78 +1,117 @@
 import { NextResponse } from 'next/server';
 import { validateClientProfile } from '@/lib/validation/client-profile';
 import { safeProfileMetadata } from '@/lib/logging';
+import { getMockTaxAlert } from '@/lib/mocks/tax-window-alerts';
+import { getMockNextSteps } from '@/lib/mocks/next-steps';
+import { LLM_DISCLAIMER } from '@/lib/disclaimers';
 import type { CalculationResult } from '@/lib/types/calculation-result';
 import type { InsightsResult } from '@/lib/types/insights-result';
 
-// LGPD: igual a /api/calculate-scenarios. Sem persistência, sem log de payload.
-//
-// SEGURANÇA: este handler é o ÚNICO ponto que deve tocar ANTHROPIC_API_KEY.
-// NUNCA expor a chave para o client. NUNCA importar /lib/llm/claude-client.ts
-// em componentes "use client".
+// Dados não persistidos por design — LGPD Art. 7º, execução de contrato
 
 export const runtime = 'nodejs';
 
-type RequestBody = {
-  profile: unknown;
-  calculationResult: unknown;
-};
-
 function isCalculationResult(v: unknown): v is CalculationResult {
-  // TODO(etapa 2): validação granular do CalculationResult quando o shape
-  // estiver estável. Por ora, checagem mínima de presença.
-  return (
-    typeof v === 'object' && v !== null &&
-    Array.isArray((v as Record<string, unknown>)['scenarios'])
-  );
+  return typeof v === 'object' && v !== null && Array.isArray((v as Record<string, unknown>)['scenarios']);
 }
+
+async function callClaude(system: string, user: string): Promise<string | null> {
+  const key = process.env['ANTHROPIC_API_KEY'];
+  if (!key) return null;
+  try {
+    const { Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: key });
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: user }],
+    });
+    const block = response.content[0];
+    return block && block.type === 'text' ? block.text : null;
+  } catch (err) {
+    console.error('[generate-insights] Claude API error:', err instanceof Error ? err.message : 'unknown');
+    return null;
+  }
+}
+
+const SYSTEM_PROMPT = `Você é um assistente especializado em planejamento patrimonial e sucessório brasileiro.
+Sua função é gerar análises técnicas para gestores de wealth management — não para clientes finais.
+
+REGRAS OBRIGATÓRIAS:
+1. Nunca use linguagem de recomendação direta ("você deve", "recomendamos"). Use "tópico para análise com assessoria jurídica", "ponto a considerar", "item para discussão com advogado habilitado".
+2. Cite sempre a base legal quando mencionar um benefício tributário (ex: "conforme STF Tema 1214", "nos termos da Lei 14.754/2023").
+3. Para o alerta de janela tributária: mencione o estado do cliente e qualquer PL em tramitação relevante.
+4. Para os próximos passos: priorize por impacto financeiro estimado, do maior para o menor.
+5. Tom: analítico, técnico, factual. Sem entusiasmo, sem linguagem de marketing.
+6. Jamais afirme que a estruturação vai "garantir" qualquer resultado — use "pode resultar em" ou "estimativa baseada em premissas".
+7. Responda APENAS em JSON válido, sem markdown, sem texto fora do JSON.
+
+Formato de resposta obrigatório:
+{
+  "taxWindow": {
+    "hasActiveWindow": boolean,
+    "alertTitle": string,
+    "alertBody": string,
+    "urgencyLevel": "low" | "medium" | "high"
+  },
+  "topicsToDiscuss": [
+    {
+      "title": string,
+      "description": string,
+      "category": "legal_structure" | "tax_optimization" | "beneficiary_review" | "documentation",
+      "estimatedImpact": string
+    }
+  ]
+}`;
 
 export async function POST(req: Request): Promise<NextResponse> {
   let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'JSON inválido no body.' }, { status: 400 });
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 });
   }
 
   if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body deve conter { profile, calculationResult }.' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'Body deve conter { profile, calculationResult }.' }, { status: 400 });
   }
 
-  const { profile, calculationResult } = body as RequestBody;
-
+  const { profile, calculationResult } = body as Record<string, unknown>;
   const profileValidation = validateClientProfile(profile);
   if (!profileValidation.ok) {
-    return NextResponse.json(
-      { error: 'Perfil inválido.', details: profileValidation.errors },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'Perfil inválido.', details: profileValidation.errors }, { status: 400 });
   }
-
   if (!isCalculationResult(calculationResult)) {
-    return NextResponse.json(
-      { error: 'calculationResult ausente ou inválido.' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'calculationResult ausente ou inválido.' }, { status: 400 });
   }
 
   console.log('[generate-insights]', safeProfileMetadata(profileValidation.value));
 
-  // TODO(etapa 3): implementar chamada à Anthropic API.
-  //   - Usar /lib/llm/claude-client.ts (callClaude).
-  //   - Montar prompts via /lib/llm/prompts.ts (taxWindow + topicsToDiscuss).
-  //   - NUNCA expor ANTHROPIC_API_KEY no client.
-  //   - Habilitar prompt caching no system prompt.
-  //   - Tratar erros (rate limit, timeout, JSON malformado da LLM).
-  const placeholder: InsightsResult | null = null;
-  if (placeholder === null) {
-    return NextResponse.json(
-      { error: 'Não implementado. Insights virão na etapa 3.' },
-      { status: 501 },
-    );
+  // Tentar Claude API; fallback para mock se chave ausente ou erro
+  const userPrompt = `Perfil do cliente: estado=${profileValidation.value.state}, patrimônio=~${Math.round(profileValidation.value.totalPatrimony / 1_000_000)}M, herdeiros=${profileValidation.value.numberOfHeirs}, objetivo=${profileValidation.value.primaryGoal}, offshore=${!!profileValidation.value.offshoreAssets}, trust_irrevogavel=${profileValidation.value.offshoreAssets?.structures.includes('irrevocable_trust') ?? false}. Melhor cenário calculado: ${calculationResult.recommendedScenario}. Economia estimada: ${calculationResult.savingsVsNoPlanning}.`;
+
+  const llmResponse = await callClaude(SYSTEM_PROMPT, userPrompt);
+
+  let taxWindow, topicsToDiscuss;
+  if (llmResponse) {
+    try {
+      const parsed = JSON.parse(llmResponse) as { taxWindow: unknown; topicsToDiscuss: unknown };
+      taxWindow        = parsed.taxWindow;
+      topicsToDiscuss  = parsed.topicsToDiscuss;
+    } catch {
+      console.error('[generate-insights] Failed to parse Claude response as JSON');
+    }
   }
 
-  return NextResponse.json(placeholder, { status: 200 });
+  // Fallback para mock se LLM falhou ou chave ausente
+  taxWindow       ??= getMockTaxAlert(profileValidation.value);
+  topicsToDiscuss ??= getMockNextSteps(profileValidation.value, calculationResult);
+
+  const insights: InsightsResult = {
+    taxWindow:       taxWindow as InsightsResult['taxWindow'],
+    topicsToDiscuss: topicsToDiscuss as InsightsResult['topicsToDiscuss'],
+    generatedAt:     new Date().toISOString(),
+    llmDisclaimer:   LLM_DISCLAIMER,
+  };
+
+  return NextResponse.json(insights, { status: 200 });
 }

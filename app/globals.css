@@ -3,9 +3,54 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --color-bg:       #020617;
+  --color-surface:  #0F172A;
+  --color-surface2: #1E293B;
+  --color-border:   #334155;
+  --color-text:     #F8FAFC;
+  --color-subtle:   #94A3B8;
+  --color-accent:   #22C55E;
+  --color-loss:     #EF4444;
+  --color-warn:     #F59E0B;
 }
 
-body {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+html, body {
+  background-color: #020617;
+  color: #F8FAFC;
+  font-family: var(--font-sans), Lato, system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures for all numeric content */
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid #22C55E;
+  outline-offset: 2px;
+}
+
+/* Scrollbar dark */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #020617; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #1E293B 25%, #334155 50%, #1E293B 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 4px;
+}
+
+@media print {
+  body { background: white !important; color: black !important; font-size: 11px; }
+  nav, footer, .no-print { display: none !important; }
 }
