@@ -4,6 +4,9 @@ import { safeProfileMetadata } from '@/lib/logging';
 import { getMockTaxAlert } from '@/lib/mocks/tax-window-alerts';
 import { getMockNextSteps } from '@/lib/mocks/next-steps';
 import { LLM_DISCLAIMER } from '@/lib/disclaimers';
+import { formatBRL } from '@/lib/format';
+import { MARRIAGE_REGIME_LABELS } from '@/lib/types/client-profile';
+import type { ClientProfile } from '@/lib/types/client-profile';
 import type { CalculationResult } from '@/lib/types/calculation-result';
 import type { InsightsResult } from '@/lib/types/insights-result';
 
@@ -65,6 +68,58 @@ Formato de resposta obrigatório:
   ]
 }`;
 
+function buildUserPrompt(profile: ClientProfile, calc: CalculationResult): string {
+  const noPlanning   = calc.scenarios.find((s) => s.name === 'no_planning');
+  const doacaoOffsh  = calc.scenarios.find((s) => s.name === 'donation_plus_offshore');
+  const holdingTrust = calc.scenarios.find((s) => s.name === 'holding_plus_trust');
+
+  const fmt = (v: number | undefined) => v !== undefined ? formatBRL(v) : 'não calculado';
+
+  const regimeLbl = profile.marriageRegime
+    ? (MARRIAGE_REGIME_LABELS[profile.marriageRegime] ?? profile.marriageRegime)
+    : 'não informado';
+
+  const hasIrrevocable = profile.offshoreAssets?.structures.includes('irrevocable_trust') ?? false;
+
+  return `Perfil do cliente:
+- Estado de domicílio fiscal: ${profile.state}
+- Patrimônio total Brasil (projetado): ${fmt(noPlanning?.breakdown.total)}
+- Offshore: ${profile.offshoreAssets ? fmt(profile.offshoreAssets.totalValue) : 'não possui'}
+- Trust irrevogável: ${hasIrrevocable ? 'sim' : 'não'}
+- Criptoativos: ${profile.cryptoAssets ? fmt(profile.cryptoAssets) : 'não possui'}
+- Herdeiros: ${profile.numberOfHeirs}
+- Cônjuge: ${profile.hasSpouse ? 'sim' : 'não'}
+- Regime de casamento: ${regimeLbl}
+- Previdência privada (PGBL/VGBL): ${fmt(profile.composition.privatePension)}
+- Horizonte de análise: ${profile.timeHorizon === 0 ? 'hoje' : `${profile.timeHorizon} anos`}
+- Objetivo principal: ${profile.primaryGoal}
+
+Resultados do cálculo (patrimônio projetado no horizonte informado):
+
+Sem planejamento:
+  Herdeiros recebem: ${fmt(noPlanning?.breakdown.toHeirs)}
+  ITCMD: ${fmt(noPlanning?.breakdown.itcmdLoss)}
+  Custos de inventário: ${fmt(noPlanning?.breakdown.inventoryCost)}
+  IR total: ${fmt(noPlanning?.breakdown.incomeTaxOnInvestments)}
+
+Doação em vida + offshore estruturado:
+  Herdeiros recebem: ${fmt(doacaoOffsh?.breakdown.toHeirs)}
+  ITCMD antecipado: ${fmt(doacaoOffsh?.breakdown.itcmdLoss)}
+  Custos de estruturação: ${fmt(doacaoOffsh?.breakdown.inventoryCost)}
+
+Holding familiar + trust irrevogável:
+  Herdeiros recebem: ${fmt(holdingTrust?.breakdown.toHeirs)}
+  ITCMD (base reduzida 35%): ${fmt(holdingTrust?.breakdown.itcmdLoss)}
+  Custos de constituição: ${fmt(holdingTrust?.breakdown.inventoryCost)}
+
+Economia estimada (melhor cenário vs. sem planejamento): ${fmt(calc.savingsVsNoPlanning)}
+${calc.projectedAt8pct && calc.projectedAt8pct.delta > 0
+  ? `Impacto de reforma ITCMD para 8% flat: ITCMD atual ${fmt(calc.projectedAt8pct.current)} → com 8%: ${fmt(calc.projectedAt8pct.projected)} (delta: ${fmt(calc.projectedAt8pct.delta)})`
+  : 'Estado já opera na alíquota máxima de 8% — sem risco adicional de reforma.'}
+
+Gere a análise nos dois campos solicitados no system prompt.`;
+}
+
 export async function POST(req: Request): Promise<NextResponse> {
   let body: unknown;
   try { body = await req.json(); } catch {
@@ -86,23 +141,20 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   console.log('[generate-insights]', safeProfileMetadata(profileValidation.value));
 
-  // Tentar Claude API; fallback para mock se chave ausente ou erro
-  const userPrompt = `Perfil do cliente: estado=${profileValidation.value.state}, patrimônio=~${Math.round(profileValidation.value.totalPatrimony / 1_000_000)}M, herdeiros=${profileValidation.value.numberOfHeirs}, objetivo=${profileValidation.value.primaryGoal}, offshore=${!!profileValidation.value.offshoreAssets}, trust_irrevogavel=${profileValidation.value.offshoreAssets?.structures.includes('irrevocable_trust') ?? false}. Melhor cenário calculado: ${calculationResult.recommendedScenario}. Economia estimada: ${calculationResult.savingsVsNoPlanning}.`;
-
-  const llmResponse = await callClaude(SYSTEM_PROMPT, userPrompt);
+  const userPrompt   = buildUserPrompt(profileValidation.value, calculationResult);
+  const llmResponse  = await callClaude(SYSTEM_PROMPT, userPrompt);
 
   let taxWindow, topicsToDiscuss;
   if (llmResponse) {
     try {
       const parsed = JSON.parse(llmResponse) as { taxWindow: unknown; topicsToDiscuss: unknown };
-      taxWindow        = parsed.taxWindow;
-      topicsToDiscuss  = parsed.topicsToDiscuss;
+      taxWindow       = parsed.taxWindow;
+      topicsToDiscuss = parsed.topicsToDiscuss;
     } catch {
       console.error('[generate-insights] Failed to parse Claude response as JSON');
     }
   }
 
-  // Fallback para mock se LLM falhou ou chave ausente
   taxWindow       ??= getMockTaxAlert(profileValidation.value);
   topicsToDiscuss ??= getMockNextSteps(profileValidation.value, calculationResult);
 

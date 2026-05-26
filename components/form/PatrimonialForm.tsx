@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CurrencyInput from '@/components/ui/CurrencyInput';
 import { ChevronDown, ChevronUp, Loader } from '@/components/ui/Icons';
-import type { ClientProfile, OffshoreStructure, MarriageRegime, PlanningGoal, TimeHorizon } from '@/lib/types/client-profile';
+import type { ClientProfile, OffshoreStructure, MarriageRegime, PlanningGoal, TimeHorizon, ScenarioKey } from '@/lib/types/client-profile';
 import { PLANNING_GOAL_LABELS, OFFSHORE_STRUCTURE_LABELS, MARRIAGE_REGIME_LABELS, MVP_STATES } from '@/lib/types/client-profile';
 
 const STORAGE_KEY = 'patrimonialReportData';
@@ -20,6 +20,7 @@ type FormState = {
   timeHorizon: TimeHorizon; showGrowthRates: boolean;
   fixedIncome: string; variableIncome: string; realEstateRate: string;
   equity: string; offshore: string; crypto: string;
+  scenarioDoacaoOffshore: boolean; scenarioHoldingTrust: boolean;
 };
 
 const INITIAL: FormState = {
@@ -31,6 +32,7 @@ const INITIAL: FormState = {
   timeHorizon: 10, showGrowthRates: false,
   fixedIncome: '10,5', variableIncome: '12,0', realEstateRate: '6,0',
   equity: '18,0', offshore: '8,0', crypto: '20,0',
+  scenarioDoacaoOffshore: true, scenarioHoldingTrust: true,
 };
 
 function Section({ title, badge, open, onToggle, children }: {
@@ -81,7 +83,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 export default function PatrimonialForm(): JSX.Element {
   const router = useRouter();
   const [f, setF] = useState<FormState>(INITIAL);
-  const [open, setOpen] = useState({ id: true, patrimony: true, intl: false, crypto: false, horizon: true });
+  const [open, setOpen] = useState({ id: true, patrimony: true, intl: false, crypto: false, horizon: true, scenarios: true });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +92,8 @@ export default function PatrimonialForm(): JSX.Element {
 
   const compositionSum = f.realEstate + f.investments + f.privatePension + f.companies + f.other;
   const compositionOk  = f.totalPatrimony === 0 || Math.abs(compositionSum - f.totalPatrimony) <= Math.max(f.totalPatrimony * 0.01, 100);
-  const isValid = f.state && f.numberOfHeirs > 0 && f.totalPatrimony > 0 && compositionOk && f.primaryGoal;
+  const scenariosOk    = f.scenarioDoacaoOffshore || f.scenarioHoldingTrust;
+  const isValid = f.state && f.numberOfHeirs > 0 && f.totalPatrimony > 0 && compositionOk && f.primaryGoal && scenariosOk;
 
   function parseRate(s: string) { return parseFloat(s.replace(',', '.')) / 100 || 0; }
 
@@ -99,19 +102,26 @@ export default function PatrimonialForm(): JSX.Element {
     if (!isValid) return;
     setLoading(true); setError(null);
 
+    const scenariosToCompare: ScenarioKey[] = [
+      'sem-planejamento',
+      ...(f.scenarioDoacaoOffshore ? ['doacao-offshore' as ScenarioKey] : []),
+      ...(f.scenarioHoldingTrust   ? ['holding-trust'  as ScenarioKey] : []),
+    ];
+
     const profile: ClientProfile = {
-      clientName:    f.clientName || undefined,
-      totalPatrimony: toReais(f.totalPatrimony),
-      state:         f.state as ClientProfile['state'],
-      marriageRegime: f.marriageRegime,
-      composition:   { realEstate: toReais(f.realEstate), investments: toReais(f.investments), privatePension: toReais(f.privatePension), companies: toReais(f.companies), other: toReais(f.other) },
-      numberOfHeirs: f.numberOfHeirs,
-      hasSpouse:     f.hasSpouse,
-      primaryGoal:   f.primaryGoal,
-      offshoreAssets: f.hasOverseas && f.offshoreValue > 0 ? { totalValue: toReais(f.offshoreValue), structures: f.offshoreStructures } : undefined,
-      cryptoAssets:  f.hasCrypto && f.cryptoValue > 0 ? toReais(f.cryptoValue) : undefined,
-      timeHorizon:   f.timeHorizon,
-      growthRates:   { fixedIncome: parseRate(f.fixedIncome), variableIncome: parseRate(f.variableIncome), realEstate: parseRate(f.realEstateRate), equity: parseRate(f.equity), offshore: parseRate(f.offshore), crypto: parseRate(f.crypto) },
+      clientName:          f.clientName || undefined,
+      totalPatrimony:      toReais(f.totalPatrimony),
+      state:               f.state as ClientProfile['state'],
+      marriageRegime:      f.marriageRegime,
+      composition:         { realEstate: toReais(f.realEstate), investments: toReais(f.investments), privatePension: toReais(f.privatePension), companies: toReais(f.companies), other: toReais(f.other) },
+      numberOfHeirs:       f.numberOfHeirs,
+      hasSpouse:           f.hasSpouse,
+      primaryGoal:         f.primaryGoal,
+      offshoreAssets:      f.hasOverseas && f.offshoreValue > 0 ? { totalValue: toReais(f.offshoreValue), structures: f.offshoreStructures } : undefined,
+      cryptoAssets:        f.hasCrypto && f.cryptoValue > 0 ? toReais(f.cryptoValue) : undefined,
+      timeHorizon:         f.timeHorizon,
+      growthRates:         { fixedIncome: parseRate(f.fixedIncome), variableIncome: parseRate(f.variableIncome), realEstate: parseRate(f.realEstateRate), equity: parseRate(f.equity), offshore: parseRate(f.offshore), crypto: parseRate(f.crypto) },
+      scenariosToCompare,
     };
 
     try {
@@ -119,11 +129,9 @@ export default function PatrimonialForm(): JSX.Element {
       if (!calcRes.ok) throw new Error(`Erro no cálculo: ${calcRes.status}`);
       const calculationResult = await calcRes.json() as unknown;
 
-      const insRes = await fetch('/api/generate-insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ profile, calculationResult }) });
-      if (!insRes.ok) throw new Error(`Erro nos insights: ${insRes.status}`);
-      const insightsResult = await insRes.json() as unknown;
-
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ profile, calculationResult, insightsResult }));
+      // Armazena dados parciais — insights são carregados na página do relatório
+      // (permite exibir Blocos 1 e 2 imediatamente enquanto o LLM processa)
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ profile, calculationResult }));
       router.push('/relatorio');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado.');
@@ -249,6 +257,58 @@ export default function PatrimonialForm(): JSX.Element {
             )}
           </div>
         )}
+      </Section>
+
+      {/* Seção 6 — Cenários a Comparar */}
+      <Section title="6 · Cenários a Comparar" open={open.scenarios} onToggle={() => tog('scenarios')}>
+        <p className="text-xs text-arbor-subtle leading-relaxed">
+          Selecione as estruturas que deseja comparar nesta simulação.
+          O ARBOR calcula os cenários escolhidos pelo profissional — não sugere estruturas patrimoniais.
+        </p>
+        <div className="mt-3 space-y-2">
+          {/* Sem planejamento — sempre ativo */}
+          <label className="flex items-center gap-2.5 rounded-lg border border-arbor-border px-3 py-2.5 opacity-60 cursor-not-allowed">
+            <span className="h-3.5 w-3.5 rounded border border-arbor-accent bg-arbor-accent flex-shrink-0 flex items-center justify-center">
+              <span className="block h-2 w-2 rounded-sm bg-white" />
+            </span>
+            <span className="text-xs text-arbor-subtle">Sem planejamento</span>
+            <span className="ml-auto text-xs text-arbor-muted">sempre incluído</span>
+          </label>
+
+          {/* Doação em vida + offshore */}
+          <label className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors duration-150 ${f.scenarioDoacaoOffshore ? 'border-arbor-accent/50 bg-arbor-accent/10 text-arbor-accent' : 'border-arbor-border text-arbor-subtle hover:border-arbor-muted'}`}>
+            <input
+              type="checkbox"
+              checked={f.scenarioDoacaoOffshore}
+              onChange={() => upd({ scenarioDoacaoOffshore: !f.scenarioDoacaoOffshore })}
+              className="sr-only"
+            />
+            <span className={`h-3.5 w-3.5 rounded border flex-shrink-0 flex items-center justify-center ${f.scenarioDoacaoOffshore ? 'bg-arbor-accent border-arbor-accent' : 'border-arbor-border'}`}>
+              {f.scenarioDoacaoOffshore && <span className="block h-2 w-2 rounded-sm bg-white" />}
+            </span>
+            <span className="text-xs">Doação em vida + offshore estruturado</span>
+          </label>
+
+          {/* Holding + trust irrevogável */}
+          <label className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors duration-150 ${f.scenarioHoldingTrust ? 'border-arbor-accent/50 bg-arbor-accent/10 text-arbor-accent' : 'border-arbor-border text-arbor-subtle hover:border-arbor-muted'}`}>
+            <input
+              type="checkbox"
+              checked={f.scenarioHoldingTrust}
+              onChange={() => upd({ scenarioHoldingTrust: !f.scenarioHoldingTrust })}
+              className="sr-only"
+            />
+            <span className={`h-3.5 w-3.5 rounded border flex-shrink-0 flex items-center justify-center ${f.scenarioHoldingTrust ? 'bg-arbor-accent border-arbor-accent' : 'border-arbor-border'}`}>
+              {f.scenarioHoldingTrust && <span className="block h-2 w-2 rounded-sm bg-white" />}
+            </span>
+            <span className="text-xs">Holding familiar + trust irrevogável</span>
+          </label>
+        </div>
+        {!scenariosOk && (
+          <p className="mt-2 text-xs text-arbor-loss">Selecione ao menos um cenário adicional para comparação.</p>
+        )}
+        <p className="mt-3 text-xs text-arbor-muted leading-relaxed">
+          A seleção de cenários é de responsabilidade exclusiva do profissional. O ARBOR realiza os cálculos solicitados.
+        </p>
       </Section>
 
       {error && (

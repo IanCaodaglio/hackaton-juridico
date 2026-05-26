@@ -15,38 +15,42 @@ const TREND_CARDS = [
 type ItcmdState = {
   uf: string;
   name: string;
-  rate: number;
+  rate: number;          // alíquota máxima — usada para cor do card
+  rateDisplay: string;   // texto exibido: "4%" ou "4%–8%" para progressivos
+  isProgressive: boolean;
   status: string;
 };
 
 const ITCMD_DATA: ItcmdState[] = [
-  { uf: 'SP', name: 'São Paulo',        rate: 4,   status: 'PL 409/2025 em tramitação (até 8%)' },
-  { uf: 'RJ', name: 'Rio de Janeiro',   rate: 8,   status: 'Progressivo 4%–8% — em vigor' },
-  { uf: 'MG', name: 'Minas Gerais',     rate: 5,   status: 'Flat 5%' },
-  { uf: 'RS', name: 'Rio Grande do Sul',rate: 6,   status: 'Progressivo 3%–6%' },
-  { uf: 'PR', name: 'Paraná',           rate: 4,   status: 'PL 730/2024 em tramitação (até 8%)' },
-  { uf: 'SC', name: 'Santa Catarina',   rate: 1,   status: 'Flat 1% — menor do país' },
-  { uf: 'DF', name: 'Distrito Federal', rate: 4,   status: 'Flat 4%' },
-  { uf: 'BA', name: 'Bahia',            rate: 4,   status: 'Progressivo até 4%' },
-  { uf: 'GO', name: 'Goiás',            rate: 4,   status: 'Progressivo 2%–4%' },
-  { uf: 'MT', name: 'Mato Grosso',      rate: 8,   status: 'Progressivo até 8%' },
-  { uf: 'MS', name: 'Mato Grosso do Sul',rate:6,   status: 'Flat 6%' },
-  { uf: 'CE', name: 'Ceará',            rate: 8,   status: 'Progressivo 2%–8%' },
-  { uf: 'PE', name: 'Pernambuco',       rate: 8,   status: 'Progressivo 2%–8%' },
-  { uf: 'PA', name: 'Pará',             rate: 2,   status: 'Flat 2%' },
-  { uf: 'AM', name: 'Amazonas',         rate: 2,   status: 'Flat 2%' },
-  { uf: 'ES', name: 'Espírito Santo',   rate: 4,   status: 'Flat 4%' },
-  { uf: 'MA', name: 'Maranhão',         rate: 4,   status: 'Progressivo 1%–4%' },
-  { uf: 'PB', name: 'Paraíba',          rate: 2,   status: 'Flat 2%' },
-  { uf: 'RN', name: 'Rio Grande do Norte',rate:3,  status: 'Flat 3%' },
-  { uf: 'AL', name: 'Alagoas',          rate: 4,   status: 'Progressivo 2%–4%' },
-  { uf: 'SE', name: 'Sergipe',          rate: 8,   status: 'Progressivo 1%–8%' },
-  { uf: 'PI', name: 'Piauí',            rate: 4,   status: 'Progressivo 2%–4%' },
-  { uf: 'TO', name: 'Tocantins',        rate: 2,   status: 'Flat 2%' },
-  { uf: 'RO', name: 'Rondônia',         rate: 4,   status: 'Flat 4%' },
-  { uf: 'AC', name: 'Acre',             rate: 4,   status: 'Flat 4%' },
-  { uf: 'AP', name: 'Amapá',            rate: 2,   status: 'Progressivo 1%–2%' },
-  { uf: 'RR', name: 'Roraima',          rate: 4,   status: 'Flat 4%' },
+  // MVP states — dados validados pelo time de Direito (2026-05-26)
+  { uf: 'SP', name: 'São Paulo',          rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Flat 4% · PL 409/2025 em tramitação (até 8%)' },
+  { uf: 'RJ', name: 'Rio de Janeiro',     rate: 8,  rateDisplay: '4%–8%', isProgressive: true,  status: 'Progressivo 4%–8% — Lei 7.174/2015 em vigor' },
+  { uf: 'MG', name: 'Minas Gerais',       rate: 5,  rateDisplay: '5%',    isProgressive: false, status: 'Flat 5% — Lei 14.941/2003' },
+  { uf: 'RS', name: 'Rio Grande do Sul',  rate: 6,  rateDisplay: '0%–6%', isProgressive: true,  status: 'Progressivo 0%–6% — Lei 8.821/1989 (causa mortis)' },
+  { uf: 'PR', name: 'Paraná',             rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Flat 4% · PL 730/2024 em tramitação (até 8%)' },
+  { uf: 'SC', name: 'Santa Catarina',     rate: 7,  rateDisplay: '1%–7%', isProgressive: true,  status: 'Progressivo 1%–7% — Lei 13.136/2004 alt. Lei 19.053/2024' },
+  { uf: 'DF', name: 'Distrito Federal',   rate: 6,  rateDisplay: '4%–6%', isProgressive: true,  status: 'Progressivo 4%–6% — Lei 3.804/2006' },
+  // Demais estados — dados indicativos; verificar com time de Direito
+  { uf: 'BA', name: 'Bahia',              rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Progressivo até 4%' },
+  { uf: 'GO', name: 'Goiás',              rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Progressivo 2%–4%' },
+  { uf: 'MT', name: 'Mato Grosso',        rate: 8,  rateDisplay: '8%',    isProgressive: false, status: 'Progressivo até 8%' },
+  { uf: 'MS', name: 'Mato Grosso do Sul', rate: 6,  rateDisplay: '6%',    isProgressive: false, status: 'Flat 6%' },
+  { uf: 'CE', name: 'Ceará',              rate: 8,  rateDisplay: '8%',    isProgressive: false, status: 'Progressivo 2%–8%' },
+  { uf: 'PE', name: 'Pernambuco',         rate: 8,  rateDisplay: '8%',    isProgressive: false, status: 'Progressivo 2%–8%' },
+  { uf: 'PA', name: 'Pará',               rate: 2,  rateDisplay: '2%',    isProgressive: false, status: 'Flat 2%' },
+  { uf: 'AM', name: 'Amazonas',           rate: 2,  rateDisplay: '2%',    isProgressive: false, status: 'Flat 2%' },
+  { uf: 'ES', name: 'Espírito Santo',     rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Flat 4%' },
+  { uf: 'MA', name: 'Maranhão',           rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Progressivo 1%–4%' },
+  { uf: 'PB', name: 'Paraíba',            rate: 2,  rateDisplay: '2%',    isProgressive: false, status: 'Flat 2%' },
+  { uf: 'RN', name: 'Rio Grande do Norte',rate: 3,  rateDisplay: '3%',    isProgressive: false, status: 'Flat 3%' },
+  { uf: 'AL', name: 'Alagoas',            rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Progressivo 2%–4%' },
+  { uf: 'SE', name: 'Sergipe',            rate: 8,  rateDisplay: '8%',    isProgressive: false, status: 'Progressivo 1%–8%' },
+  { uf: 'PI', name: 'Piauí',              rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Progressivo 2%–4%' },
+  { uf: 'TO', name: 'Tocantins',          rate: 2,  rateDisplay: '2%',    isProgressive: false, status: 'Flat 2%' },
+  { uf: 'RO', name: 'Rondônia',           rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Flat 4%' },
+  { uf: 'AC', name: 'Acre',               rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Flat 4%' },
+  { uf: 'AP', name: 'Amapá',              rate: 2,  rateDisplay: '2%',    isProgressive: false, status: 'Progressivo 1%–2%' },
+  { uf: 'RR', name: 'Roraima',            rate: 4,  rateDisplay: '4%',    isProgressive: false, status: 'Flat 4%' },
 ];
 
 function rateColor(rate: number): string {
@@ -82,6 +86,9 @@ export default function DashboardPage(): JSX.Element {
             Dashboard de Mercado · Wealth &amp; Sucessão Brasil
           </h1>
           <p className="text-sm text-arbor-subtle mt-1">{today}</p>
+          <p className="text-xs text-arbor-muted mt-0.5">
+            Dados públicos consolidados · Fontes: RFB/CBE, ANBIMA, IBGE, Tribunais de Justiça estaduais
+          </p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-arbor-warn/40 bg-arbor-warn/10 px-3 py-1 text-xs text-arbor-warn">
           <span className="h-1.5 w-1.5 rounded-full bg-arbor-warn" />
@@ -126,12 +133,19 @@ export default function DashboardPage(): JSX.Element {
           {ITCMD_DATA.map((s) => (
             <div
               key={s.uf}
-              title={`${s.name}: ${s.status}`}
+              title={s.isProgressive
+                ? `Alíquota progressiva — ${s.rateDisplay}. Valor exibido é o teto.\n${s.name}: ${s.status}`
+                : `${s.name}: ${s.status}`}
               className={`rounded-lg border p-3 cursor-default transition-all duration-150 hover:scale-105 ${rateColor(s.rate)}`}
             >
               <p className="font-mono text-sm font-bold">{s.uf}</p>
               <p className="text-xs opacity-75 truncate">{s.name}</p>
-              <p className="font-semibold text-base mt-1">{s.rate}%</p>
+              <div className="flex items-baseline gap-1 mt-1">
+                <p className="font-semibold text-base">{s.rateDisplay}</p>
+                {s.isProgressive && (
+                  <span className="text-xs opacity-70 font-normal">prog.</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -185,7 +199,7 @@ export default function DashboardPage(): JSX.Element {
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-arbor-muted mt-3 text-center">
-            Dados reais disponíveis após adoção da plataforma.
+            Base: simulações demonstrativas. Dados agregados próprios previstos para a Fase 4 do roadmap.
           </p>
         </div>
       </section>

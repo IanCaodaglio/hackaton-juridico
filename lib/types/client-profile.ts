@@ -86,21 +86,27 @@ export const DEFAULT_GROWTH_RATES: AssetGrowthRates = {
   crypto:         0.20,
 };
 
+export type ScenarioKey =
+  | 'sem-planejamento'
+  | 'doacao-offshore'
+  | 'holding-trust';
+
 export type ClientProfile = {
-  clientName?:       string;
-  totalPatrimony:    number;
-  state:             BrazilianState;
-  marriageRegime?:   MarriageRegime;
-  composition:       AssetComposition;
-  numberOfHeirs:     number;
-  hasSpouse:         boolean;
-  primaryGoal:       PlanningGoal;
-  secondaryGoals?:   PlanningGoal[];
-  offshoreAssets?:   {
+  clientName?:          string;
+  totalPatrimony:       number;
+  state:                BrazilianState;
+  marriageRegime?:      MarriageRegime;
+  composition:          AssetComposition;
+  numberOfHeirs:        number;
+  hasSpouse:            boolean;
+  primaryGoal:          PlanningGoal;
+  secondaryGoals?:      PlanningGoal[];
+  offshoreAssets?:      {
     totalValue:  number;
     structures:  OffshoreStructure[];
   };
-  cryptoAssets?:     number;
-  timeHorizon:       TimeHorizon;
-  growthRates:       AssetGrowthRates;
+  cryptoAssets?:        number;
+  timeHorizon:          TimeHorizon;
+  growthRates:          AssetGrowthRates;
+  scenariosToCompare?:  ScenarioKey[];
 };

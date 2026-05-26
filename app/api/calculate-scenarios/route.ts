@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { validateClientProfile } from '@/lib/validation/client-profile';
 import { safeProfileMetadata } from '@/lib/logging';
-import { calculateFakeScenarios } from '@/lib/calculations/fake-scenarios';
+import { calculateScenarios } from '@/lib/calculations/calculate-scenarios';
 
 // Dados não persistidos por design — LGPD Art. 7º, execução de contrato
 
@@ -19,5 +19,5 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   console.log('[calculate-scenarios]', safeProfileMetadata(validation.value));
-  return NextResponse.json(calculateFakeScenarios(validation.value), { status: 200 });
+  return NextResponse.json(calculateScenarios(validation.value), { status: 200 });
 }
