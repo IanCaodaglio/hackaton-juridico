@@ -4,41 +4,8 @@
 
 :root {
   color-scheme: light;
-  --color-bg: #FAFAF9;
-  --color-fg: #18181B;
-  --color-fg-muted: #525252;
-  --color-border: #E5E5E5;
-  --color-accent: #0F172A;
-  --color-loss: #991B1B;
-  --color-gain: #166534;
-}
-
-html {
-  font-size: 14px;
 }
 
 body {
-  background: var(--color-bg);
-  color: var(--color-fg);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-.tabular {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum';
-}
-
-/* Foco visível institucional — anel discreto azul-marinho */
-*:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-/* Texto serifado para títulos do relatório */
-.font-serif-display {
-  font-family: var(--font-serif), 'Source Serif 4', Georgia, 'Times New Roman', serif;
-  font-feature-settings: 'kern', 'liga';
-  letter-spacing: -0.01em;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
