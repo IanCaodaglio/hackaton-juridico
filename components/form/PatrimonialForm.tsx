@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import CurrencyInput from '@/components/ui/CurrencyInput';
 import {
-  BRAZILIAN_STATES,
   PLANNING_GOALS,
   PLANNING_GOAL_LABELS,
   type BrazilianState,
@@ -12,115 +12,116 @@ import {
 } from '@/lib/types/client-profile';
 import type { CalculationResult } from '@/lib/types/calculation-result';
 import type { InsightsResult } from '@/lib/types/insights-result';
+import { formatBRL } from '@/lib/format';
 
-// Abordagem de transporte entre /form e /report:
-// usamos sessionStorage (client-only, descartado ao fechar a aba).
-// Decisão consciente: NÃO usar query string (dados sensíveis na URL/histórico)
-// e NÃO usar persistência server-side (LGPD — sem retenção).
 const STORAGE_KEY = 'patrimonialReportData';
 
+// MVP cobre 7 estados. Demais ufs ficam fora do select (a validação
+// dos tipos ainda aceita todos, mas o produto só oferece esses 7).
+const MVP_STATES: { value: BrazilianState; label: string }[] = [
+  { value: 'SP', label: 'São Paulo' },
+  { value: 'RJ', label: 'Rio de Janeiro' },
+  { value: 'MG', label: 'Minas Gerais' },
+  { value: 'RS', label: 'Rio Grande do Sul' },
+  { value: 'PR', label: 'Paraná' },
+  { value: 'SC', label: 'Santa Catarina' },
+  { value: 'DF', label: 'Distrito Federal' },
+];
+
 type FormState = {
-  totalPatrimony: string;
+  totalCents: number;
   state: BrazilianState | '';
-  realEstate: string;
-  investments: string;
-  companies: string;
-  privatePension: string;
-  other: string;
+  realEstateCents: number;
+  investmentsCents: number;
+  companiesCents: number;
+  privatePensionCents: number;
+  otherCents: number;
   numberOfHeirs: string;
-  hasSpouse: boolean;
+  hasSpouse: boolean | null;
   primaryGoal: PlanningGoal | '';
-  secondaryGoals: PlanningGoal[];
 };
 
-const INITIAL_STATE: FormState = {
-  totalPatrimony: '',
+const INITIAL: FormState = {
+  totalCents: 0,
   state: '',
-  realEstate: '',
-  investments: '',
-  companies: '',
-  privatePension: '',
-  other: '',
+  realEstateCents: 0,
+  investmentsCents: 0,
+  companiesCents: 0,
+  privatePensionCents: 0,
+  otherCents: 0,
   numberOfHeirs: '',
-  hasSpouse: false,
+  hasSpouse: null,
   primaryGoal: '',
-  secondaryGoals: [],
 };
-
-function toNumber(v: string): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : NaN;
-}
 
 export default function PatrimonialForm(): JSX.Element {
   const router = useRouter();
-  const [form, setForm] = useState<FormState>(INITIAL_STATE);
+  const [form, setForm] = useState<FormState>(INITIAL);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const compositionSum = useMemo(() => {
-    return (
-      (toNumber(form.realEstate) || 0) +
-      (toNumber(form.investments) || 0) +
-      (toNumber(form.companies) || 0) +
-      (toNumber(form.privatePension) || 0) +
-      (toNumber(form.other) || 0)
-    );
-  }, [form.realEstate, form.investments, form.companies, form.privatePension, form.other]);
-
-  const total = toNumber(form.totalPatrimony) || 0;
-  const tolerance = Math.max(total * 0.01, 1);
-  const compositionMismatch = total > 0 && Math.abs(compositionSum - total) > tolerance;
-
   function update<K extends keyof FormState>(key: K, value: FormState[K]): void {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((p) => ({ ...p, [key]: value }));
   }
 
-  function toggleSecondaryGoal(goal: PlanningGoal): void {
-    setForm((prev) => {
-      const exists = prev.secondaryGoals.includes(goal);
-      return {
-        ...prev,
-        secondaryGoals: exists
-          ? prev.secondaryGoals.filter((g) => g !== goal)
-          : [...prev.secondaryGoals, goal],
-      };
-    });
-  }
+  const composition = useMemo(
+    () => ({
+      total: form.totalCents / 100,
+      sum:
+        (form.realEstateCents +
+          form.investmentsCents +
+          form.companiesCents +
+          form.privatePensionCents +
+          form.otherCents) /
+        100,
+    }),
+    [form],
+  );
 
-  function buildProfile(): ClientProfile | null {
-    if (!form.state || !form.primaryGoal) return null;
-    const profile: ClientProfile = {
-      totalPatrimony: toNumber(form.totalPatrimony),
-      state: form.state,
-      composition: {
-        realEstate: toNumber(form.realEstate) || 0,
-        investments: toNumber(form.investments) || 0,
-        companies: toNumber(form.companies) || 0,
-        privatePension: toNumber(form.privatePension) || 0,
-        other: toNumber(form.other) || 0,
-      },
-      numberOfHeirs: toNumber(form.numberOfHeirs),
-      hasSpouse: form.hasSpouse,
-      primaryGoal: form.primaryGoal,
-      ...(form.secondaryGoals.length > 0 ? { secondaryGoals: form.secondaryGoals } : {}),
-    };
-    return profile;
-  }
+  const diff = composition.sum - composition.total;
+  const tolerance = Math.max(composition.total * 0.01, 1);
+  const compositionOk = composition.total > 0 && Math.abs(diff) <= tolerance;
+  const compositionInvalid = composition.total > 0 && Math.abs(diff) > tolerance;
+
+  // Progresso visual (0–100%) da soma vs. total
+  const progressPct =
+    composition.total > 0
+      ? Math.min(100, Math.max(0, (composition.sum / composition.total) * 100))
+      : 0;
+
+  const heirs = Number(form.numberOfHeirs);
+  const heirsValid = Number.isInteger(heirs) && heirs >= 1 && heirs <= 20;
+
+  const isValid =
+    composition.total > 0 &&
+    form.state !== '' &&
+    compositionOk &&
+    heirsValid &&
+    form.hasSpouse !== null &&
+    form.primaryGoal !== '';
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     setError(null);
+    if (!isValid || !form.state || !form.primaryGoal || form.hasSpouse === null) {
+      setError('Revise os campos destacados antes de prosseguir.');
+      return;
+    }
 
-    const profile = buildProfile();
-    if (!profile) {
-      setError('Preencha estado e objetivo primário.');
-      return;
-    }
-    if (compositionMismatch) {
-      setError('A soma da composição não bate com o patrimônio total (tolerância 1%).');
-      return;
-    }
+    const profile: ClientProfile = {
+      totalPatrimony: form.totalCents / 100,
+      state: form.state,
+      composition: {
+        realEstate: form.realEstateCents / 100,
+        investments: form.investmentsCents / 100,
+        companies: form.companiesCents / 100,
+        privatePension: form.privatePensionCents / 100,
+        other: form.otherCents / 100,
+      },
+      numberOfHeirs: heirs,
+      hasSpouse: form.hasSpouse,
+      primaryGoal: form.primaryGoal,
+    };
 
     setSubmitting(true);
     try {
@@ -130,7 +131,6 @@ export default function PatrimonialForm(): JSX.Element {
         body: JSON.stringify(profile),
       });
       if (!calcRes.ok) {
-        // Stub atual retorna 501. Erro real virá na etapa 2.
         const detail = await calcRes.text();
         throw new Error(`Falha em /api/calculate-scenarios (${calcRes.status}): ${detail}`);
       }
@@ -154,145 +154,255 @@ export default function PatrimonialForm(): JSX.Element {
       router.push('/report');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido.');
-    } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Dados gerais</legend>
+    <>
+      <form onSubmit={handleSubmit} className="space-y-10">
+        {/* Seção: Dados gerais */}
+        <section>
+          <h2 className="text-base font-semibold text-ink">Perfil patrimonial do cliente</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            Informe a configuração patrimonial para gerar a análise sucessória comparada.
+          </p>
 
-        <label className="block">
-          <span className="text-sm">Patrimônio total (R$)</span>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            required
-            value={form.totalPatrimony}
-            onChange={(e) => update('totalPatrimony', e.target.value)}
-            className="mt-1 w-full rounded border px-3 py-2"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm">Estado</span>
-          <select
-            required
-            value={form.state}
-            onChange={(e) => update('state', e.target.value as BrazilianState | '')}
-            className="mt-1 w-full rounded border px-3 py-2"
-          >
-            <option value="">Selecione…</option>
-            {BRAZILIAN_STATES.map((uf) => (
-              <option key={uf} value={uf}>{uf}</option>
-            ))}
-          </select>
-        </label>
-      </fieldset>
-
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Composição patrimonial (R$)</legend>
-        {(
-          [
-            ['realEstate', 'Imóveis'],
-            ['investments', 'Investimentos financeiros'],
-            ['companies', 'Participação em empresas'],
-            ['privatePension', 'Previdência privada (PGBL/VGBL)'],
-            ['other', 'Outros'],
-          ] as const
-        ).map(([key, label]) => (
-          <label key={key} className="block">
-            <span className="text-sm">{label}</span>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={form[key]}
-              onChange={(e) => update(key, e.target.value)}
-              className="mt-1 w-full rounded border px-3 py-2"
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <CurrencyInput
+              label="Valor total do patrimônio"
+              cents={form.totalCents}
+              onChangeCents={(c) => update('totalCents', c)}
+              required
             />
-          </label>
-        ))}
-        <p className={`text-sm ${compositionMismatch ? 'text-red-600' : 'text-neutral-600'}`}>
-          Soma: R$ {compositionSum.toLocaleString('pt-BR')} {total > 0 && (
-            <>(total informado: R$ {total.toLocaleString('pt-BR')})</>
-          )}
-        </p>
-      </fieldset>
-
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Família</legend>
-        <label className="block">
-          <span className="text-sm">Número de herdeiros</span>
-          <input
-            type="number"
-            min={0}
-            step="1"
-            required
-            value={form.numberOfHeirs}
-            onChange={(e) => update('numberOfHeirs', e.target.value)}
-            className="mt-1 w-full rounded border px-3 py-2"
-          />
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={form.hasSpouse}
-            onChange={(e) => update('hasSpouse', e.target.checked)}
-          />
-          <span className="text-sm">Possui cônjuge / companheiro(a)</span>
-        </label>
-      </fieldset>
-
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Objetivos do planejamento</legend>
-        <label className="block">
-          <span className="text-sm">Objetivo primário</span>
-          <select
-            required
-            value={form.primaryGoal}
-            onChange={(e) => update('primaryGoal', e.target.value as PlanningGoal | '')}
-            className="mt-1 w-full rounded border px-3 py-2"
-          >
-            <option value="">Selecione…</option>
-            {PLANNING_GOALS.map((g) => (
-              <option key={g} value={g}>{PLANNING_GOAL_LABELS[g]}</option>
-            ))}
-          </select>
-        </label>
-        <div>
-          <span className="text-sm">Objetivos secundários (opcional)</span>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {PLANNING_GOALS.filter((g) => g !== form.primaryGoal).map((g) => (
-              <label key={g} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.secondaryGoals.includes(g)}
-                  onChange={() => toggleSecondaryGoal(g)}
-                />
-                <span className="text-sm">{PLANNING_GOAL_LABELS[g]}</span>
+            <div>
+              <label
+                htmlFor="state"
+                className="block text-xs font-medium uppercase tracking-wide text-ink-muted"
+              >
+                Estado do cliente <span className="text-loss" aria-hidden>*</span>
               </label>
-            ))}
+              <select
+                id="state"
+                required
+                value={form.state}
+                onChange={(e) => update('state', e.target.value as BrazilianState | '')}
+                className="mt-1 block w-full rounded-md border border-line bg-white px-3 py-2 text-sm transition hover:border-ink-subtle focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="">Selecione…</option>
+                {MVP_STATES.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
-      </fieldset>
+        </section>
 
-      {error && (
-        <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-          {error}
-        </div>
-      )}
+        {/* Seção: Composição patrimonial */}
+        <section>
+          <h2 className="text-base font-semibold text-ink">Composição patrimonial</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            Como o patrimônio está distribuído entre as classes de ativo.
+          </p>
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
-      >
-        {submitting ? 'Calculando…' : 'Gerar relatório'}
-      </button>
-    </form>
+          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <CurrencyInput
+              label="Imóveis"
+              cents={form.realEstateCents}
+              onChangeCents={(c) => update('realEstateCents', c)}
+              invalid={compositionInvalid}
+            />
+            <CurrencyInput
+              label="Investimentos"
+              cents={form.investmentsCents}
+              onChangeCents={(c) => update('investmentsCents', c)}
+              invalid={compositionInvalid}
+            />
+            <CurrencyInput
+              label="Empresas / participações"
+              cents={form.companiesCents}
+              onChangeCents={(c) => update('companiesCents', c)}
+              invalid={compositionInvalid}
+            />
+            <CurrencyInput
+              label="Previdência (PGBL/VGBL)"
+              cents={form.privatePensionCents}
+              onChangeCents={(c) => update('privatePensionCents', c)}
+              invalid={compositionInvalid}
+            />
+            <CurrencyInput
+              label="Outros"
+              cents={form.otherCents}
+              onChangeCents={(c) => update('otherCents', c)}
+              invalid={compositionInvalid}
+            />
+          </div>
+
+          {/* Barra de validação da soma */}
+          <div className="mt-5">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
+              <div
+                className={`h-full transition-all ${
+                  composition.total === 0
+                    ? 'bg-line'
+                    : compositionOk
+                      ? 'bg-gain'
+                      : 'bg-loss'
+                }`}
+                style={{ width: `${progressPct}%` }}
+                role="progressbar"
+                aria-valuenow={Math.round(progressPct)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Conferência da composição patrimonial"
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
+              <span className="tabular">
+                Soma da composição: <strong className="text-ink">{formatBRL(composition.sum)}</strong>
+              </span>
+              <span className="tabular">
+                {composition.total > 0 ? (
+                  compositionOk ? (
+                    <span className="text-gain">Composição confere com o total informado.</span>
+                  ) : (
+                    <span className="text-loss">
+                      Diferença: <strong className="tabular">{formatBRL(diff)}</strong>
+                      {' '}(tolerância de 1%)
+                    </span>
+                  )
+                ) : (
+                  <span>Informe o patrimônio total para conferir.</span>
+                )}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* Seção: Família e objetivo */}
+        <section>
+          <h2 className="text-base font-semibold text-ink">Família e objetivo</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            Dados que afetam a meação, a partilha e a estratégia recomendada.
+          </p>
+
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="heirs"
+                className="block text-xs font-medium uppercase tracking-wide text-ink-muted"
+              >
+                Número de herdeiros <span className="text-loss" aria-hidden>*</span>
+              </label>
+              <input
+                id="heirs"
+                type="number"
+                min={1}
+                max={20}
+                required
+                value={form.numberOfHeirs}
+                onChange={(e) => update('numberOfHeirs', e.target.value)}
+                className={`tabular mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm transition focus:outline-none focus:ring-2 focus:ring-accent ${
+                  form.numberOfHeirs && !heirsValid ? 'border-loss' : 'border-line hover:border-ink-subtle'
+                }`}
+              />
+            </div>
+
+            <div>
+              <span className="block text-xs font-medium uppercase tracking-wide text-ink-muted">
+                Possui cônjuge? <span className="text-loss" aria-hidden>*</span>
+              </span>
+              <div className="mt-1 inline-flex rounded-md border border-line bg-white p-0.5">
+                {([
+                  ['Sim', true],
+                  ['Não', false],
+                ] as const).map(([label, value]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => update('hasSpouse', value)}
+                    aria-pressed={form.hasSpouse === value}
+                    className={`px-4 py-1.5 text-sm rounded transition ${
+                      form.hasSpouse === value
+                        ? 'bg-accent text-accent-fg'
+                        : 'text-ink-muted hover:text-ink'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <label
+              htmlFor="goal"
+              className="block text-xs font-medium uppercase tracking-wide text-ink-muted"
+            >
+              Objetivo principal do planejamento <span className="text-loss" aria-hidden>*</span>
+            </label>
+            <select
+              id="goal"
+              required
+              value={form.primaryGoal}
+              onChange={(e) => update('primaryGoal', e.target.value as PlanningGoal | '')}
+              className="mt-1 block w-full rounded-md border border-line bg-white px-3 py-2 text-sm transition hover:border-ink-subtle focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">Selecione…</option>
+              {PLANNING_GOALS.map((g) => (
+                <option key={g} value={g}>{PLANNING_GOAL_LABELS[g]}</option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        {error && (
+          <div
+            role="alert"
+            className="rounded-md border border-loss/30 bg-red-50 px-4 py-3 text-sm text-loss"
+          >
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <button
+            type="submit"
+            disabled={!isValid || submitting}
+            className="block w-full rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {submitting ? 'Gerando análise…' : 'Gerar análise sucessória'}
+          </button>
+          <p className="text-xs text-ink-muted">
+            Os dados informados não são armazenados em nossos servidores.{' '}
+            <a href="#" className="underline underline-offset-2 hover:text-ink">Saiba mais</a>.
+          </p>
+        </div>
+      </form>
+
+      {submitting && <LoadingOverlay />}
+    </>
+  );
+}
+
+function LoadingOverlay(): JSX.Element {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/90 backdrop-blur-sm"
+    >
+      <div className="flex flex-col items-center gap-4">
+        <div
+          className="h-10 w-10 animate-spin rounded-full border-2 border-line border-t-accent"
+          aria-hidden
+        />
+        <p className="text-sm font-medium text-ink">Gerando análise patrimonial…</p>
+        <p className="max-w-xs text-center text-xs text-ink-muted">
+          Calculando cenários e compondo as considerações para a reunião.
+        </p>
+      </div>
+    </div>
   );
 }

@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { validateClientProfile } from '@/lib/validation/client-profile';
 import { safeProfileMetadata } from '@/lib/logging';
-import type { CalculationResult } from '@/lib/types/calculation-result';
+import { calculateFakeScenarios } from '@/lib/calculations/fake-scenarios';
 
-// LGPD — IMPORTANTE:
-// Por design, dados do cliente final NÃO são persistidos. Esta rota processa
-// o payload em memória e retorna o resultado. Os logs do servidor devem
-// registrar APENAS metadados (estado, ordem de grandeza do patrimônio),
-// nunca valores absolutos nem a composição patrimonial.
-// Ver /lib/logging.ts.
+// LGPD: dados do cliente final NÃO são persistidos. Processados em memória
+// e retornados. Logs do servidor registram APENAS metadados — ver
+// /lib/logging.ts (safeProfileMetadata).
+//
+// ETAPA 2: usa cálculo DEMONSTRATIVO de /lib/calculations/fake-scenarios.ts.
+// Substituir por /lib/calculations/scenarios.ts (cálculo real) na etapa 3,
+// após o time de Direito validar a tabela completa de ITCMD.
 
 export const runtime = 'nodejs';
 
@@ -17,10 +18,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: 'JSON inválido no body.' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'JSON inválido no body.' }, { status: 400 });
   }
 
   const validation = validateClientProfile(body);
@@ -31,19 +29,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Log seguro (metadados apenas).
   console.log('[calculate-scenarios]', safeProfileMetadata(validation.value));
 
-  // TODO(etapa 2): implementar cálculos em /lib/calculations/scenarios.ts.
-  // Validar tabela de ITCMD com o time de Direito antes. Por ora, retorna
-  // 501 explícito para tornar o stub óbvio durante a integração.
-  const placeholder: CalculationResult | null = null;
-  if (placeholder === null) {
-    return NextResponse.json(
-      { error: 'Não implementado. Cálculos virão na etapa 2.' },
-      { status: 501 },
-    );
-  }
-
-  return NextResponse.json(placeholder, { status: 200 });
+  const result = calculateFakeScenarios(validation.value);
+  return NextResponse.json(result, { status: 200 });
 }

@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { validateClientProfile } from '@/lib/validation/client-profile';
 import { safeProfileMetadata } from '@/lib/logging';
+import { getMockTaxAlert } from '@/lib/mocks/tax-window-alerts';
+import { getMockNextSteps } from '@/lib/mocks/next-steps';
+import { LLM_DISCLAIMER } from '@/lib/disclaimers';
 import type { CalculationResult } from '@/lib/types/calculation-result';
 import type { InsightsResult } from '@/lib/types/insights-result';
 
-// LGPD: igual a /api/calculate-scenarios. Sem persistência, sem log de payload.
+// LGPD: idem /api/calculate-scenarios. Sem persistência, sem log de payload.
 //
-// SEGURANÇA: este handler é o ÚNICO ponto que deve tocar ANTHROPIC_API_KEY.
-// NUNCA expor a chave para o client. NUNCA importar /lib/llm/claude-client.ts
-// em componentes "use client".
+// ETAPA 2: retorna conteúdo MOCKADO via /lib/mocks/*. Sem chamada à
+// Anthropic API. Substituir por chamadas reais ao Claude na etapa 3
+// (ver /lib/llm/claude-client.ts).
 
 export const runtime = 'nodejs';
 
@@ -18,8 +21,7 @@ type RequestBody = {
 };
 
 function isCalculationResult(v: unknown): v is CalculationResult {
-  // TODO(etapa 2): validação granular do CalculationResult quando o shape
-  // estiver estável. Por ora, checagem mínima de presença.
+  // Validação mínima — etapa 3 fará type guard completo.
   return (
     typeof v === 'object' && v !== null &&
     Array.isArray((v as Record<string, unknown>)['scenarios'])
@@ -50,7 +52,6 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 400 },
     );
   }
-
   if (!isCalculationResult(calculationResult)) {
     return NextResponse.json(
       { error: 'calculationResult ausente ou inválido.' },
@@ -60,19 +61,12 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   console.log('[generate-insights]', safeProfileMetadata(profileValidation.value));
 
-  // TODO(etapa 3): implementar chamada à Anthropic API.
-  //   - Usar /lib/llm/claude-client.ts (callClaude).
-  //   - Montar prompts via /lib/llm/prompts.ts (taxWindow + topicsToDiscuss).
-  //   - NUNCA expor ANTHROPIC_API_KEY no client.
-  //   - Habilitar prompt caching no system prompt.
-  //   - Tratar erros (rate limit, timeout, JSON malformado da LLM).
-  const placeholder: InsightsResult | null = null;
-  if (placeholder === null) {
-    return NextResponse.json(
-      { error: 'Não implementado. Insights virão na etapa 3.' },
-      { status: 501 },
-    );
-  }
+  const insights: InsightsResult = {
+    taxWindow: getMockTaxAlert(profileValidation.value),
+    topicsToDiscuss: getMockNextSteps(profileValidation.value, calculationResult),
+    generatedAt: new Date().toISOString(),
+    llmDisclaimer: LLM_DISCLAIMER,
+  };
 
-  return NextResponse.json(placeholder, { status: 200 });
+  return NextResponse.json(insights, { status: 200 });
 }

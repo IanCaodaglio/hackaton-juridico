@@ -6,7 +6,7 @@ import Block1PatrimonialThermometer from '@/components/report/Block1_Patrimonial
 import Block2ScenarioComparison from '@/components/report/Block2_ScenarioComparison';
 import Block3TaxWindowAlert from '@/components/report/Block3_TaxWindowAlert';
 import Block4NextSteps from '@/components/report/Block4_NextSteps';
-import { LGPD_NOTICE, NOT_LEGAL_ADVICE_NOTICE } from '@/lib/disclaimers';
+import { getStateName } from '@/lib/mocks/tax-window-alerts';
 import type { ClientProfile } from '@/lib/types/client-profile';
 import type { CalculationResult } from '@/lib/types/calculation-result';
 import type { InsightsResult } from '@/lib/types/insights-result';
@@ -30,9 +30,7 @@ export default function ReportPage(): JSX.Element {
       return;
     }
     try {
-      // TODO(etapa 2): validar shape com type guards antes de confiar.
-      // Por ora aceitamos como ReportData — origem é a própria página, mas
-      // sessionStorage pode ser manipulado pelo usuário.
+      // TODO(etapa 3): type guard completo antes de confiar no shape.
       const parsed = JSON.parse(raw) as ReportData;
       setData(parsed);
     } catch {
@@ -42,10 +40,10 @@ export default function ReportPage(): JSX.Element {
 
   if (missing) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <p className="text-sm">
+      <main className="mx-auto max-w-2xl px-6 py-14">
+        <p className="text-sm text-ink-muted">
           Nenhum relatório carregado.{' '}
-          <Link href="/" className="underline">Voltar ao formulário</Link>.
+          <Link href="/" className="text-accent underline">Voltar ao formulário</Link>.
         </p>
       </main>
     );
@@ -53,36 +51,86 @@ export default function ReportPage(): JSX.Element {
 
   if (!data) {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <p className="text-sm text-neutral-600">Carregando relatório…</p>
+      <main className="mx-auto max-w-2xl px-6 py-14">
+        <p className="text-sm text-ink-muted">Carregando relatório…</p>
       </main>
     );
   }
 
+  const generatedAt = new Date(data.insightsResult.generatedAt);
+  const generatedLabel = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  }).format(generatedAt);
+
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">Relatório de Planejamento</h1>
-        <Link href="/" className="text-sm underline">Novo perfil</Link>
+    <div className="min-h-screen">
+      {/* Header sticky institucional */}
+      <header className="sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3.5">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="font-serif-display text-lg font-semibold tracking-tight">
+              Sucessio
+            </span>
+            <span className="text-xs text-ink-muted">
+              Análise patrimonial · {getStateName(data.profile.state)} ·{' '}
+              <span className="tabular">{generatedLabel}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink hover:border-ink-subtle"
+            >
+              Exportar PDF
+            </button>
+            <Link
+              href="/"
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg hover:opacity-90"
+            >
+              Nova análise
+            </Link>
+          </div>
+        </div>
       </header>
 
-      <div className="mb-8 rounded border-2 border-amber-400 bg-amber-50 p-4 text-sm text-amber-900">
-        <strong className="mb-1 block uppercase tracking-wide">
-          Aviso Importante
-        </strong>
-        {NOT_LEGAL_ADVICE_NOTICE}
-      </div>
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        {/* Banner jurídico obrigatório */}
+        <div
+          role="note"
+          className="mb-8 flex items-start gap-3 rounded-md border border-line bg-white p-4 shadow-card"
+          style={{ borderLeft: '3px solid var(--color-accent)' }}
+        >
+          <div className="text-sm leading-relaxed text-ink">
+            <strong className="block text-xs font-semibold uppercase tracking-wide text-accent">
+              Aviso jurídico
+            </strong>
+            <p className="mt-1 text-ink-muted">
+              Esta análise é uma ferramenta de apoio ao planejamento, baseada em
+              alíquotas referenciais da legislação estadual. Não constitui
+              consultoria jurídica ou tributária. Os cenários apresentados devem
+              ser validados com advogado e contador habilitados.
+            </p>
+          </div>
+        </div>
 
-      <div className="space-y-6">
-        <Block1PatrimonialThermometer calculationResult={data.calculationResult} />
-        <Block2ScenarioComparison calculationResult={data.calculationResult} />
-        <Block3TaxWindowAlert insightsResult={data.insightsResult} />
-        <Block4NextSteps insightsResult={data.insightsResult} />
-      </div>
+        {/* Blocos */}
+        <div className="space-y-8">
+          <Block1PatrimonialThermometer
+            calculationResult={data.calculationResult}
+            profile={data.profile}
+          />
+          <Block2ScenarioComparison calculationResult={data.calculationResult} />
+          <Block3TaxWindowAlert insightsResult={data.insightsResult} />
+          <Block4NextSteps insightsResult={data.insightsResult} />
+        </div>
 
-      <footer className="mt-12 border-t pt-6 text-xs text-neutral-500">
-        {LGPD_NOTICE}
-      </footer>
-    </main>
+        <footer className="mt-12 border-t border-line pt-6 text-xs text-ink-subtle">
+          Sucessio · Plataforma de apoio ao planejamento patrimonial. As
+          análises não são persistidas em nossos servidores.
+        </footer>
+      </main>
+    </div>
   );
 }
